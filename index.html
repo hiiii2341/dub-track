@@ -43,7 +43,13 @@
   [hidden] { display: none !important; }
 
   #stage { position: fixed; inset: 0; display: grid; place-items: center; background: var(--stage); }
-  #vid { width: 100%; height: 100%; max-width: 100%; object-fit: contain; background: #000; display: block; }
+  /* Fill the whole screen by default and crop the overhang; .fit letterboxes instead. */
+  #vid {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%; max-width: 100%;
+    object-fit: cover; background: #000; display: block;
+  }
+  #vid.fit { object-fit: contain; }
 
   /* ---------- start screen ---------- */
   #start {
@@ -84,6 +90,7 @@
   #micState .warn { color: #ffb02e; }
 
   /* sensitivity */
+  .sliders { display: flex; gap: 10px 26px; flex-wrap: wrap; justify-content: center; width: 100%; }
   .sens { display: flex; align-items: center; gap: 12px; width: min(340px, 80vw); }
   .sens label { font-size: 12px; color: var(--ink-dim); letter-spacing: .05em; text-transform: uppercase; flex: none; }
   input[type=range] {
@@ -103,7 +110,7 @@
   /* ---------- waveform card ---------- */
   #card {
     position: absolute;
-    width: clamp(240px, 44vw, 520px);
+    width: clamp(200px, calc(var(--cardw, 44) * 1vw), 820px);
     touch-action: none;
     background: linear-gradient(180deg, #0c1117 0%, #070a0f 100%);
     border: 1px solid var(--panel-edge);
@@ -173,6 +180,18 @@
   }
   .hint.hidden { opacity: 0; }
 
+  /* Short landscape screens: tighten the bar and the start screen so nothing clips. */
+  @media (max-height: 560px) {
+    #bar { gap: 9px; padding-top: 10px; }
+    #rec { width: 56px; height: 56px; }
+    #rec i { width: 40px; height: 40px; }
+    .icon-btn { width: 40px; height: 40px; }
+    .hint { bottom: calc(126px + env(safe-area-inset-bottom, 0px)); }
+    #start { gap: 14px; justify-content: flex-start; }
+    #start h1 { font-size: 24px; }
+    .preview-wrap { width: min(440px, 72vw); }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     body.rec .dot { animation: none; }
     #bar, .hint, #rec i { transition: none; }
@@ -215,13 +234,22 @@
 <div class="hint hidden" id="hint">Tap the screen to hide the controls</div>
 
 <div id="bar" hidden>
-  <div class="sens" id="sensBar">
-    <label for="sens2">Level</label>
-    <input id="sens2" type="range" min="0.4" max="4" step="0.05" value="1.4" aria-label="Microphone sensitivity">
+  <div class="sliders">
+    <div class="sens">
+      <label for="sens2">Level</label>
+      <input id="sens2" type="range" min="0.4" max="4" step="0.05" value="1.4" aria-label="Microphone sensitivity">
+    </div>
+    <div class="sens">
+      <label for="size">Size</label>
+      <input id="size" type="range" min="22" max="78" step="1" value="44" aria-label="Waveform card size">
+    </div>
   </div>
   <div class="row">
     <button class="icon-btn" id="swap" type="button" title="Change video" aria-label="Change video">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h11l-2.5-2.5M20 17H9l2.5 2.5"/></svg>
+    </button>
+    <button class="icon-btn" id="fill" type="button" title="Fill or fit" aria-label="Toggle fill screen" aria-pressed="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3H3v6M15 21h6v-6M21 9V3h-6M3 15v6h6"/></svg>
     </button>
     <button id="rec" type="button" aria-label="Start recording"><i></i></button>
     <button class="icon-btn off" id="mute" type="button" title="Clip audio" aria-label="Toggle clip audio" aria-pressed="true">
@@ -415,6 +443,12 @@
   var main = new Track(cv);
   var demo = new Track(pv);
 
+  function clock(s) {
+    if (s < 60) return s.toFixed(2);
+    var m = Math.floor(s / 60), r = s - m * 60;
+    return m + ":" + (r < 10 ? "0" : "") + r.toFixed(2);
+  }
+
   /* ---- loop --------------------------------------------------------------- */
   var recording = false, t0 = 0, last = 0;
 
@@ -435,7 +469,7 @@
     track.push(lvl);
     track.draw(live);
 
-    if (filming && recording) tagR.textContent = ((now - t0) / 1000).toFixed(2);
+    if (filming && recording) tagR.textContent = clock((now - t0) / 1000);
 
     requestAnimationFrame(frame);
   }
@@ -492,12 +526,41 @@
   });
 
   function placeCard() {
-    if (card.dataset.moved) return;
     var r = card.getBoundingClientRect();
-    card.style.left = Math.round((window.innerWidth - r.width) / 2) + "px";
-    card.style.top  = Math.round(window.innerHeight * 0.56) + "px";
+    var maxX = Math.max(0, window.innerWidth  - r.width);
+    var maxY = Math.max(0, window.innerHeight - r.height);
+    if (card.dataset.moved) {
+      // keep a dragged card on screen after a rotate or resize
+      card.style.left = Math.min(parseFloat(card.style.left) || 0, maxX) + "px";
+      card.style.top  = Math.min(parseFloat(card.style.top)  || 0, maxY) + "px";
+    } else {
+      card.style.left = Math.round(maxX / 2) + "px";
+      card.style.top  = Math.round(window.innerHeight * 0.62) + "px";
+    }
   }
-  window.addEventListener("resize", function () { if (!card.hidden) placeCard(); });
+  function reflow() { if (!card.hidden) placeCard(); }
+  window.addEventListener("resize", reflow);
+  window.addEventListener("orientationchange", function () {
+    setTimeout(reflow, 120);   // wait for Safari to settle the new viewport
+    setTimeout(reflow, 450);
+  });
+
+  /* ---- fill / fit + card size --------------------------------------------- */
+  var fillBtn = document.getElementById("fill");
+  fillBtn.addEventListener("click", function (e) {
+    e.stopPropagation();
+    var fitting = vid.classList.toggle("fit");
+    fillBtn.setAttribute("aria-pressed", String(!fitting));
+    fillBtn.classList.toggle("off", fitting);
+  });
+
+  var sizeInput = document.getElementById("size");
+  sizeInput.addEventListener("input", function (e) {
+    e.stopPropagation();
+    card.style.setProperty("--cardw", this.value);
+    reflow();
+  });
+  sizeInput.addEventListener("pointerdown", function (e) { e.stopPropagation(); });
 
   /* ---- record ------------------------------------------------------------- */
   recBtn.addEventListener("click", function (e) {
