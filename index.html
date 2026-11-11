@@ -57,7 +57,14 @@
   }
   #start h1 { font-size: clamp(25px, 5vw, 38px); font-weight: 600; letter-spacing: -.02em; margin: 0; text-wrap: balance; }
   #start p { margin: 0; color: var(--ink-dim); max-width: 36ch; line-height: 1.5; font-size: 14.5px; }
-  .preview-wrap { width: min(520px, 86vw); }
+  .preview-wrap {
+    width: min(520px, 86vw);
+    border: 1px solid var(--panel-edge);
+    border-radius: 11px;
+    padding: 8px;
+    background: #070a0f;
+  }
+  #pv { display: block; width: 100%; height: auto; border-radius: 4px; }
 
   .btn {
     font: inherit; font-weight: 600; font-size: 15px;
