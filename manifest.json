@@ -1,0 +1,11 @@
+{
+  "name": "Dub Track",
+  "short_name": "Dub Track",
+  "description": "Pick a clip, hit record, and watch your voice draw a live waveform over the video.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#04070a",
+  "theme_color": "#04070a"
+}
