@@ -90,6 +90,17 @@
   #micState .warn { color: #ffb02e; }
 
   /* sensitivity */
+  .scrub-row { display: flex; align-items: center; gap: 13px; width: 100%; max-width: 760px; }
+  .scrub-row .t {
+    font-family: var(--mono); font-size: 12px; color: var(--ink);
+    font-variant-numeric: tabular-nums; flex: none; min-width: 44px;
+    text-shadow: 0 1px 3px rgba(0,0,0,.9);
+  }
+  .scrub-row .t:last-child { text-align: right; }
+  #scrub { height: 5px; background: #2d3744; }
+  #scrub::-webkit-slider-thumb { width: 26px; height: 26px; background: var(--ink); }
+  #scrub::-moz-range-thumb { width: 26px; height: 26px; background: var(--ink); }
+
   .sliders { display: flex; gap: 10px 26px; flex-wrap: wrap; justify-content: center; width: 100%; }
   .sens { display: flex; align-items: center; gap: 12px; width: min(340px, 80vw); }
   .sens label { font-size: 12px; color: var(--ink-dim); letter-spacing: .05em; text-transform: uppercase; flex: none; }
@@ -150,7 +161,8 @@
     padding: 16px calc(18px + env(safe-area-inset-right, 0px))
              calc(20px + env(safe-area-inset-bottom, 0px))
              calc(18px + env(safe-area-inset-left, 0px));
-    background: linear-gradient(180deg, transparent, rgba(0,0,0,.8) 48%);
+    /* strong enough to keep the controls readable over bright footage */
+    background: linear-gradient(180deg, rgba(0,0,0,0) 0%, rgba(0,0,0,.62) 26%, rgba(0,0,0,.9) 62%);
     transition: opacity .45s ease;
   }
   #bar.hidden { opacity: 0; pointer-events: none; }
@@ -234,6 +246,11 @@
 <div class="hint hidden" id="hint">Tap the screen to hide the controls</div>
 
 <div id="bar" hidden>
+  <div class="scrub-row">
+    <span class="t" id="tNow">0:00</span>
+    <input id="scrub" type="range" min="0" max="1000" step="1" value="0" aria-label="Scrub through the video">
+    <span class="t" id="tEnd">0:00</span>
+  </div>
   <div class="sliders">
     <div class="sens">
       <label for="sens2">Level</label>
@@ -517,9 +534,10 @@
     placeCard();
     keepAwake();
     if (mic.ctx && mic.ctx.state === "suspended") mic.ctx.resume();
-    vid.play().catch(function () {});
+    // Nudge playback so iOS decodes and paints a frame, then hold it for scrubbing.
+    vid.play().then(function () { vid.pause(); }).catch(function () {});
     hint.textContent = mic.on
-      ? "Tap the screen to hide the controls"
+      ? "Scrub to your spot, then record — it starts from there"
       : "Mic is off — the wave is simulated. Go back and turn it on for your real voice.";
     hint.classList.remove("hidden");
     setTimeout(function () { hint.classList.add("hidden"); }, 5000);
@@ -554,6 +572,51 @@
     fillBtn.classList.toggle("off", fitting);
   });
 
+  /* ---- scrubbing ---------------------------------------------------------- */
+  var scrub = document.getElementById("scrub");
+  var tNow  = document.getElementById("tNow");
+  var tEnd  = document.getElementById("tEnd");
+  var scrubbing = false;
+
+  function mmss(s) {
+    if (!isFinite(s) || s < 0) return "0:00";
+    var m = Math.floor(s / 60), r = Math.floor(s % 60);
+    return m + ":" + (r < 10 ? "0" : "") + r;
+  }
+  function hasDuration() { return isFinite(vid.duration) && vid.duration > 0; }
+
+  vid.addEventListener("loadedmetadata", function () {
+    tEnd.textContent = mmss(vid.duration);
+    tNow.textContent = "0:00";
+    scrub.value = 0;
+  });
+
+  vid.addEventListener("timeupdate", function () {
+    if (scrubbing || !hasDuration()) return;
+    scrub.value = Math.round((vid.currentTime / vid.duration) * 1000);
+    tNow.textContent = mmss(vid.currentTime);
+  });
+
+  function seekTo(frac) {
+    if (!hasDuration()) return;
+    var t = Math.max(0, Math.min(vid.duration - 0.05, frac * vid.duration));
+    try { vid.currentTime = t; } catch (err) {}
+    tNow.textContent = mmss(t);
+  }
+
+  scrub.addEventListener("pointerdown", function (e) {
+    e.stopPropagation();
+    scrubbing = true;
+    vid.pause();            // hold still so you can land on an exact frame
+  });
+  scrub.addEventListener("input", function (e) {
+    e.stopPropagation();
+    seekTo(this.value / 1000);
+  });
+  function endScrub() { scrubbing = false; }
+  window.addEventListener("pointerup", endScrub);
+  window.addEventListener("pointercancel", endScrub);
+
   var sizeInput = document.getElementById("size");
   sizeInput.addEventListener("input", function (e) {
     e.stopPropagation();
@@ -572,10 +635,10 @@
       t0 = performance.now();
       main.reset();
       if (mic.ctx && mic.ctx.state === "suspended") mic.ctx.resume();
-      try { vid.currentTime = 0; } catch (err) {}
-      vid.play().catch(function () {});
+      vid.play().catch(function () {});   // resumes from wherever you scrubbed to
       setTimeout(function () { if (recording) bar.classList.add("hidden"); }, 2200);
     } else {
+      vid.pause();                        // hold the frame so you can line up the next take
       bar.classList.remove("hidden");
       tagR.textContent = "0.00";
     }
